@@ -1,0 +1,66 @@
+listening on port 4550...
+***********Client Request Headers************
+
+GET http://www.eecs.wsu.edu/~hauser/cs455/lectures/calendar.html HTTP/1.1
+Host: www.eecs.wsu.edu
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0 Iceweasel/38.7.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+
+
+**********END Client Request Headers****************
+
+
+***********Server Response Headers************
+
+HTTP/1.1 200 OK
+Date: Tue, 06 Dec 2016 07:53:26 GMT
+Server: Apache/2.4.6 (CentOS) mod_fcgid/2.3.9 PHP/5.4.16
+Last-Modified: Fri, 02 Dec 2016 19:40:46 GMT
+ETag: "4ec7-542b21d4e538d"
+Accept-Ranges: bytes
+Content-Length: 20167
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+Content-Type: text/html
+
+
+**********END Server Response Headers****************
+
+
+***********Client Request Headers************
+
+GET http://www.computerhistory.org/internet_history/thumbs/david_clark_t.jpg HTTP/1.1
+Host: www.computerhistory.org
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0 Iceweasel/38.7.1
+Accept: image/png,image/*;q=0.8,*/*;q=0.5
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://www.eecs.wsu.edu/~hauser/cs455/lectures/calendar.html
+Connection: keep-alive
+
+
+**********END Client Request Headers****************
+
+
+***********Server Response Headers************
+
+HTTP/1.1 404 Not Found
+Server: Apache/2.4.7 (Ubuntu)
+X-Powered-By: PHP/5.5.9-1ubuntu4.20
+Content-Type: text/html
+Content-Length: 12422
+Accept-Ranges: bytes
+Date: Tue, 06 Dec 2016 07:53:11 GMT
+X-Varnish: 287682037
+Age: 0
+Via: 1.1 varnish
+Connection: close
+Set-Cookie: chm=newapp3; path=/
+
+
+**********END Server Response Headers****************
+
+

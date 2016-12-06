@@ -1,0 +1,237 @@
+#!/usr/bin/python
+import socket, os
+import re
+
+BUFFER_SIZE = 4096
+DEBUG = True
+
+class Proxy:
+    def __init__(self, ip, port):
+        self.ip = ip 
+        self.port = port
+
+    def start(self):
+        childCount = 0
+        s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #internet family, TCP protocol
+        s1.bind((self.ip, self.port))
+        s1.listen(5)
+        print "listening on port %d..." % (self.port)
+        serving = True
+        child = False
+
+        #server fork pattern
+        while serving:
+            s2, addr = s1.accept() #returns client socket, address of that client
+            if os.fork() == 0: #if child process
+                s1.close() #don't need parent socket
+                child = True
+                serving = False
+                s3 = None #us as a client socket to web server
+        
+                i = 0
+                host = ""
+                serverTable = {} #(host, socket)
+
+                while 1:
+
+                    #handle the request of the client
+                    clientMsg, content = self.__handleCommunication(s2)
+ 
+                    #Connection close modified headers
+                    #clientMsg = re.sub("Connection:.*\r\n", "Connection: close\r\n", clientMsg, flags=re.IGNORECASE)
+
+                    if len(clientMsg) > 0:
+                        content = self.__readContent(s2, clientMsg, content)
+                    else:
+                        break
+
+                    print "***********Client Request Headers************\n\n", clientMsg, "\n\n**********END Client Request Headers****************\n\n"
+
+
+                    #if s3 is None:
+                    #establish the connection with the webserver host
+                    s3, host = self.__establishServerConn(clientMsg, host, s3, serverTable)
+
+                    try:
+                        #send that host the request we got from client
+                        s3.send(clientMsg + '\r\n' + content)
+                    except socket.error:
+                        #web-server closed it's connection, re-establish connection
+                        del serverTable[host]
+                        host = ""
+                        s3 = None
+                        s3, host = self.__establishServerConn(clientMsg, host, s3, serverTable)
+
+                    #handle the response of the server
+                    serverMsg, content = self.__handleCommunication(s3)
+
+                    if len(clientMsg) > 0:
+                        content = self.__readContent(s3, serverMsg, content)
+                    else:
+                        #web-server closed it's connection, re-establish connection
+                        del serverTable[host]
+                        host = ""
+                        s3 = None
+                        s3, host = self.__establishServerConn(clientMsg, host, s3, serverTable)
+                        content = self.__readContent(s3, serverMsg, content)
+
+                    #see if we have to close connection to the server on our end
+                    if self.__findConnectionClose(serverMsg) is True:
+                        s3.close()
+                        del serverTable[host]
+                        host = ""
+                        s3 = None
+
+                    try: #in case client socket closed its connection
+                        #send response to client
+                        s2.send(serverMsg + '\r\n' + content)
+                    except socket.reror:
+                        break 
+
+                    print "***********Server Response Headers************\n\n", serverMsg, "\n\n**********END Server Response Headers****************\n\n"
+                
+ 
+                for s in serverTable.values():
+                   s.close() 
+
+                if s3 is not None:
+                    s3.close() #done talking to web server
+
+                s2.close()
+
+            else: #if parent process
+                s2.close() #close the child socket on parent end                
+                childCount += 1 #if we got here, means we forked a child
+
+                while childCount: #is greater than 0
+                    #-1 indicates any child process, os.WNOHANG indicates don't wait, just poll
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                    if pid == 0:
+                        break; #returns 0 if no ZOMBIE process found
+                    else:
+                        childCount -= 1
+
+        if not child:
+            s1.close()
+
+    def __findConnectionClose(self, msg):
+        flag = False
+        reSearch = re.search("Connection: *close\r\n", msg, re.IGNORECASE)
+        if reSearch is not None: #if content-length set
+            flag = True
+        
+        return flag
+
+    #handles request from client or response for web server
+    def __handleCommunication(self, sock):
+        msg = ""
+        flag = 0
+        sock.setblocking(False)
+        sock.settimeout(2)
+        while 1:
+            try:
+                data = sock.recv(1) #we use 1 instead of buffer size because we don't know if we'll read more than content
+            except socket.error:
+                break
+
+            if not data: break 
+            msg += data
+
+            if msg.find('\r\n\r\n') != -1: #signifies end of headers
+                flag = 1
+                break
+
+        if flag is 0:
+            return "", ""
+
+        split = msg.split('\r\n\r\n', 1)
+        if len(split) == 1:
+            beforeContent, afterHeaders = split[0], ''
+        elif len(split) == 2:
+            beforeContent, afterHeaders =  split[0], split[1] #first occurence in case of chunked
+
+        return beforeContent + '\r\n', afterHeaders
+
+    def __readContent(self, sock, msg, content=""):
+
+        #first chick if content length or chunked
+        reSearch = re.search("Content-Length:.*\r\n", msg, re.IGNORECASE)
+        if reSearch is not None: #if content-length set
+            contentLength = int(re.sub('Content-Length:', '', reSearch.group(), flags=re.IGNORECASE).replace(' ', '').replace('\r\n', ''))
+            while len(content) < contentLength:
+                left = contentLength - len(content)
+                if left < BUFFER_SIZE:
+                    bufferSize = left
+                else:
+                    bufferSize = BUFFER_SIZE
+
+                data = sock.recv(bufferSize)
+                if not data: break
+
+                content += data
+
+        else: #if chunked content
+            reSearch = re.search("Transfer-Encoding: *chunked\r\n", msg, re.IGNORECASE)
+
+            if reSearch is not None:
+                while content.find('0\r\n\r\n') == -1:
+                    data = sock.recv(1)
+                    if not data: break
+
+                    content += data
+
+        return content
+
+
+    def __establishServerConn(self, msg, oldHost, oldSock, serverTable):
+        requestLine = msg.split("\r\n")[0].split(' ')
+        
+        path = requestLine[1] 
+
+        reSearch = re.search("Host:.*\r\n", msg, re.IGNORECASE)
+        #if reSearch is not None:
+        L = re.split(":|\r\n| |\t", reSearch.group())
+        L.remove('')
+        host = L[1].replace("http://", "") #.connect needs to get rid of http://
+
+        if host == oldHost: #host did not change
+            return oldSock, oldHost
+        #elif oldSock is not None:
+        #    oldSock.close()
+
+        if path[0] != '/':
+            endPoint = path #might already be in form i.e www.example.com/path/to/file
+        #else will be in form /path/to/file so need to append host before it
+        else: 
+            endPoint = host + path
+
+        if host not in serverTable.keys():
+
+            #now we have the endPoint string, initialize request 
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            #get port information, default to 80
+            port = 80
+
+            L = endPoint.split(":")
+            if len(L) > 1 and L[1].split('/')[0].isdigit():
+                port = int(L[1].split('/')[0])
+
+            #now establish connection with web server
+            sock.connect((socket.gethostbyname(host), port))
+            #sock.send(msg) #send the message with request-line w/ possible headers and body
+
+            serverTable[host] = sock
+
+        else:
+            sock = serverTable[host]
+
+                
+        return sock, host #host is the new host we connected to.
+
+        
+
+if __name__ == '__main__':
+    proxy = Proxy('127.0.0.1', 4550)
+    proxy.start()
+
